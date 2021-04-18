@@ -1,31 +1,44 @@
-import numpy as np
-from PIL import Image
+#built-in
 import os
 import os.path
-from typing import Any, Callable, cast, Dict, List, Optional, Tuple
+import glob
 
+#misc
+import numpy as np
+from PIL import Image
+
+#torch
 import torchvision
 import torch
-import torch.utils.data as data # only for checking dataloader, delete after
 import torchvision.transforms as transforms
-import torch.utils.data.dataset as Dataset  # For custom data-sets
+
+#local
+import dataset.custom_datasets as custom
 
 class ToTensor(object):
-    """Transform the image to tensor.
-    """
-    def __call__(self, x):
-        x = torch.from_numpy(x)
-        return x
+	"""Transform the image to tensor.
+	"""
+	def __call__(self, x):
+		x = torch.from_numpy(x)
+		return x
 
 def get_houston(root):
 
-	#DONTCOMMIT add transformations and mu, std of dataset for norm here
 	norm = np.load(os.path.join(root,'workdir/houston/houston_norm.npy'))
 
 	image_transform = transforms.Compose([
 		ToTensor(),
 		transforms.Normalize(norm[:, 0], norm[:, 1])])
 
+	mask_transform = transforms.Compose([
+		ToTensor()])
+
+	test_image_transform = transforms.Compose([
+		ToTensor(),
+		transforms.Normalize(norm[:, 0], norm[:, 1])])
+
+	test_mask_transform = transforms.Compose([
+		ToTensor()])
 
 	def npy_loader(path):
 
@@ -39,133 +52,40 @@ def get_houston(root):
 	data_dir = os.path.join(root, 'images/houston/by-image/data')
 	mask_dir = os.path.join(root, 'images/houston/by-image/mask')
 
-	#DONTCOMMIT alternative to doing inside Dataset
+
+	#ONLY CREATES ONE COMBINED SET FROM DATA AND MASK DIRS
+	###-------------------------------------------------------------------------
+	#houston_dataset = SegmentationDataset(root_image=data_dir, root_mask=mask_dir, loader=npy_loader, image_transform=image_transform, mask_transform=mask_transform)
+
+
+	#TAKES IN LIST OF PATHS AND SPLITS INTO TRAIN + VAL
+	###-------------------------------------------------------------------------
+
+	#alternative to find paths inside Dataset from https://discuss.pytorch.org/t/how-make-customised-dataset-for-semantic-segmentation/30881/4
 	#glob with wildcard* gets all files with extension
-	#data_paths = glob.glob("D:\\Neda\\Pytorch\\U-net\\BMMCdata\\data\\*.jpg")
-	#mask_paths = glob.glob("D:\\Neda\\Pytorch\\U-net\\BMMCdata\\masks\\*.jpg")
+	image_paths = glob.glob(os.path.join(data_dir, '*.npy'))
+	mask_paths = glob.glob(os.path.join(mask_dir, '*.npy'))
 
-	houston_dataset = SegmentationDataset(root_image=data_dir, root_mask=mask_dir, loader=npy_loader, image_transform=image_transform, mask_transform=None)
+	train_size = 0.8
+	num_paths = len(image_paths)
+	num_train = int(num_paths*train_size)
 
+	idxs = np.arange(num_paths) 
+	np.random.shuffle(idxs)
 
-	#print (f"#trainval: {len(trainval_dataset)} #test: {len(test_dataset)}")
-	return houston_dataset#trainval test
+	train_idxs = idxs[:num_train]
+	test_idxs = idxs[num_train:]
 
+	#split into train + val
+	train_image_paths = list(np.array(image_paths)[train_idxs])
+	train_mask_paths = list(np.array(mask_paths)[train_idxs])
 
-###
-#Custom segmentation dataset
-###-------------------------------------------------------------------------
+	test_image_paths = list(np.array(image_paths)[test_idxs])
+	test_mask_paths = list(np.array(mask_paths)[test_idxs])
 
-#DONTCOMMIT CAN REMOVE THIS SECTION IF NO ERRORS OR ADD BACK
-'''
-def has_file_allowed_extension(filename: str, extensions: Tuple[str, ...]) -> bool:
-	"""Checks if a file is an allowed extension.
+	train_dataset = custom.SegmentationDatasetPath(image_paths=train_image_paths, mask_paths=train_mask_paths, loader=npy_loader, image_transform=train_image_transform, mask_transform=train_mask_transform)
+	val_dataset = custom.SegmentationDatasetPath(image_paths=test_image_paths, mask_paths=test_mask_paths, loader=npy_loader, image_transform=test_image_transform, mask_transform=test_mask_transform)
 
-	Args:
-	    filename (string): path to a file
-	    extensions (tuple of strings): extensions to consider (lowercase)
+	print('Train: {} Val: {}'.format(len(train_dataset), len(val_dataset)))
 
-	Returns:
-	    bool: True if the filename ends with one of given extensions
-	"""
-	return filename.lower().endswith(extensions)
-
-
-
-def is_image_file(filename: str) -> bool:
-	"""Checks if a file is an allowed image extension.
-
-	Args:
-	    filename (string): path to a file
-
-	Returns:
-	    bool: True if the filename ends with a known image extension
-	"""
-	return has_file_allowed_extension(filename, IMG_EXTENSIONS)
-'''
-
-def make_dataset(image_directory: str, mask_directory: str,): #-> List[Tuple[str, int]]:
-	image_paths = []
-	mask_paths = []
-	image_directory = os.path.expanduser(image_directory)
-	mask_directory = os.path.expanduser(mask_directory)
-
-	'''DONTCOMMIT REMOVE THIS IF NO ERRORS
-	both_none = extensions is None and is_valid_file is None
-	both_something = extensions is not None and is_valid_file is not None
-	if both_none or both_something:
-		raise ValueError("Both extensions and is_valid_file cannot be None or not None at the same time")
-	if extensions is not None:
-		def is_valid_file(x: str) -> bool:
-			return has_file_allowed_extension(x, cast(Tuple[str, ...], extensions))
-
-	is_valid_file = cast(Callable[[str], bool], is_valid_file)
-	for target_class in sorted(class_to_idx.keys()):
-		class_index = class_to_idx[target_class]
-		target_dir = os.path.join(directory, target_class)
-		if not os.path.isdir(target_dir):
-			continue
-	'''
-
-	for root, _, fnames in sorted(os.walk(image_directory, followlinks=True)):
-		for fname in sorted(fnames):
-			path = os.path.join(root, fname)
-			#if is_valid_file(path):
-			image_paths.append(path)
-
-	for root, _, fnames in sorted(os.walk(mask_directory, followlinks=True)):
-		for fname in sorted(fnames):
-			path = os.path.join(root, fname)
-			#if is_valid_file(path):
-			mask_paths.append(path)
-
-
-	return image_paths, mask_paths
-
-
-class SegmentationDataset(data.Dataset):
-
-	'''
-	Your custom dataset should inherit Dataset and override the following methods:
-
-		__len__ so that len(dataset) returns the size of the dataset.
-		__getitem__ to support the indexing such that dataset[i] can be used to get i'th sample
-	'''
-
-	#store just image paths in init
-
-	def __init__(self, root_image: str, root_mask: str, loader: Callable[[str], Any], image_transform: Optional[Callable] = None, mask_transform: Optional[Callable] = None, is_valid_file: Optional[Callable[[str], bool]] = None) -> None:
-		super(SegmentationDataset, self).__init__()
-
-		image_paths, mask_paths = make_dataset(root_image, root_mask)
-
-		self.loader = loader
-
-		self.image_paths = image_paths
-		self.mask_paths = mask_paths
-
-		self.image_transform = image_transform
-		self.mask_transform = mask_transform
-
-	def __getitem__(self, index: int) -> Tuple[Any, Any]:
-		"""
-		Args:
-			index (int): Index
-
-		Returns:
-			tuple: (image, mask)
-		"""
-		image_path = self.image_paths[index]
-		mask_path = self.mask_paths[index]
-
-		image = self.loader(image_path)
-		mask = self.loader(mask_path)
-
-		if self.image_transform is not None:
-			image = self.image_transform(image)
-		if self.mask_transform is not None:
-			mask = self.mask_transform(mask)
-
-		return image, mask
-
-	def __len__(self) -> int:
-		return len(self.image_paths)
+	return train_dataset, val_dataset#trainval test

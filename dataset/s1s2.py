@@ -22,16 +22,15 @@ class ToTensor(object):
 		x = torch.from_numpy(x)
 		return x
 
-def get_trento(root):
+def get_s1s2(root):
 
-	#DONTCOMMIT add transformations and mu, std of dataset for norm here
-	norm = np.load(os.path.join(root,'workdir/trento/trento_norm.npy'))
+	norm = np.load(os.path.join(root,'workdir/s1s2glcm/s1s2_norm.npy'))
 
-	image_transform = transforms.Compose([
+	train_image_transform = transforms.Compose([
 		ToTensor(),
 		transforms.Normalize(norm[:, 0], norm[:, 1])])
 
-	mask_transform = transforms.Compose([
+	train_mask_transform = transforms.Compose([
 		ToTensor()])
 
 	test_image_transform = transforms.Compose([
@@ -50,13 +49,13 @@ def get_trento(root):
 		return image
 
 	#root is start of datafolder e.g. "../data-local", already abspath
-	data_dir = os.path.join(root, 'images/trento/by-image/data')
-	mask_dir = os.path.join(root, 'images/trento/by-image/mask')
+	data_dir = os.path.join(root, 'images/s1s2seg/by-image/data')
+	mask_dir = os.path.join(root, 'images/s1s2seg/by-image/mask')
 
 
 	#ONLY CREATES ONE COMBINED SET FROM DATA AND MASK DIRS
 	###-------------------------------------------------------------------------
-	#trento_dataset = SegmentationDataset(root_image=data_dir, root_mask=mask_dir, loader=npy_loader, image_transform=image_transform, mask_transform=mask_transform)
+	#s1s2_dataset = SegmentationDataset(root_image=data_dir, root_mask=mask_dir, loader=npy_loader, image_transform=image_transform, mask_transform=mask_transform)
 
 
 	#TAKES IN LIST OF PATHS AND SPLITS INTO TRAIN + VAL
@@ -89,4 +88,4 @@ def get_trento(root):
 
 	print('Train: {} Val: {}'.format(len(train_dataset), len(val_dataset)))
 
-	return train_dataset, val_dataset#trainval test
+	return train_dataset, val_dataset #s1s2_dataset

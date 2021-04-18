@@ -22,16 +22,15 @@ class ToTensor(object):
 		x = torch.from_numpy(x)
 		return x
 
-def get_trento(root):
+def get_trento_stride8(root):
 
-	#DONTCOMMIT add transformations and mu, std of dataset for norm here
 	norm = np.load(os.path.join(root,'workdir/trento/trento_norm.npy'))
 
-	image_transform = transforms.Compose([
+	train_image_transform = transforms.Compose([
 		ToTensor(),
 		transforms.Normalize(norm[:, 0], norm[:, 1])])
 
-	mask_transform = transforms.Compose([
+	train_mask_transform = transforms.Compose([
 		ToTensor()])
 
 	test_image_transform = transforms.Compose([
@@ -50,8 +49,8 @@ def get_trento(root):
 		return image
 
 	#root is start of datafolder e.g. "../data-local", already abspath
-	data_dir = os.path.join(root, 'images/trento/by-image/data')
-	mask_dir = os.path.join(root, 'images/trento/by-image/mask')
+	data_dir = os.path.join(root, 'images/trento_stride8/by-image/data')
+	mask_dir = os.path.join(root, 'images/trento_stride8/by-image/mask')
 
 
 	#ONLY CREATES ONE COMBINED SET FROM DATA AND MASK DIRS
@@ -89,4 +88,5 @@ def get_trento(root):
 
 	print('Train: {} Val: {}'.format(len(train_dataset), len(val_dataset)))
 
-	return train_dataset, val_dataset#trainval test
+	return train_dataset, val_dataset #trento_dataset
+
