@@ -43,7 +43,6 @@ def fuseMatrix(W1, W2):
 
 	return W
 
-
 def graphKNN(d, k):
 
 	# k-NN graph.
@@ -51,10 +50,6 @@ def graphKNN(d, k):
 	d.sort()
 	d = d[:, 1:k+1] #this is a vector 100x10, nxk
 	return d, idx
-
-#def torchGraphKNN(d, k):
-
-
 
 def adjacency(dist, idx):
 	"""Return the adjacency matrix of a kNN graph."""
@@ -92,7 +87,6 @@ def adjacency(dist, idx):
 	assert type(W) is scipy.sparse.csr.csr_matrix
 	return W
 
-
 def numpyNormalizedLaplacian(W):
 	'''
 	Normalized graph laplacian.
@@ -103,10 +97,10 @@ def numpyNormalizedLaplacian(W):
 	and is used as input to the chebyshev graph convolution.
 
 	Args:
-		W(scipy.sparse.csr.csr_matrix): numpy weighted graph similarity matrix 
+		W(scipy sparse): numpy weighted graph similarity matrix 
 
 	Outputs:
-		L(torch): normalized graph Laplacian 
+		L(scipy sparse): normalized graph Laplacian 
 	'''
 
 	#d_i = sum_j w_ij
@@ -123,12 +117,9 @@ def numpyNormalizedLaplacian(W):
 
 	L_sym = scipy.sparse.csr_matrix.todense(L_sym)
 
-	#print(type(L_sym))
-
 	return L_sym
 
-
-def normalizedLaplacian(W, out):
+def scipyNormalizedLaplacian(W, out):
 	'''
 	Normalized graph laplacian.
 	The symmetric graph Laplacian is defined as
@@ -138,10 +129,10 @@ def normalizedLaplacian(W, out):
 	and is used as input to the chebyshev graph convolution.
 
 	Args:
-		W: sparse scipy weighted graph similarity matrix
+		W(scipy sparse): weighted graph similarity matrix
 
 	Outputs:
-		L: normalized graph Laplacian
+		L: (scipy sparse) normalized graph Laplacian
 	'''
 
 	#d_i = sum_j w_ij
@@ -167,12 +158,38 @@ def normalizedLaplacian(W, out):
 	elif out == 'sparse':
 		L_sym = scipy.sparse.csr_matrix.tocoo(L_sym)
 
-
-
-
 	#L_sym = scipy.sparse.csr_matrix.tocoo(L_sym)	
 
 	return L_sym
+
+def torchNormalizedLaplacian(W):
+	d = scipy.sparse.csr_matrix.sum(W, axis = 0)#returns np matrix
+
+	#Included in several similar algos for numerical stability in normalized sym laplacian 
+	#but doesnt seem to have effect. Possibly more important for sparse W.
+	d += np.spacing(np.array(0, W.dtype))
+
+	d = np.squeeze(np.asarray(d))
+
+	D_neg = scipy.sparse.diags(1 / (np.sqrt(d)))
+
+	I = scipy.sparse.eye(W.shape[0], dtype=W.dtype)
+
+	L_sym = I - D_neg*W*D_neg
+
+	L_sym = scipy.sparse.csr_matrix.tocoo(L_sym)
+
+
+	#scipy to torch
+	row = torch.from_numpy(L_sym.row.astype(np.int64)).to(torch.long)
+	col = torch.from_numpy(L_sym.col.astype(np.int64)).to(torch.long)
+	edge_index = torch.stack([row, col], dim=0)
+
+	val = torch.from_numpy(L_sym.data.astype(np.float64)).to(torch.float)
+
+	out = torch.sparse.FloatTensor(edge_index, val, torch.Size(L_sym.shape))
+
+	return out
 
 def numpyGraphConvolution(X, L, receptive_field_k):
 	'''
@@ -218,7 +235,7 @@ def numpyGraphConvolution(X, L, receptive_field_k):
 
 	return convolved_xk
 
-def torchGraphConvolution(X, L, receptive_field_k):
+def torchDenseChebGConv(X, L, receptive_field_k):
 	'''
 	Performs graph convolution on features X of nodes around subgraph G_vi s.t.
 	conv(X) = g_theta(L) conv with X = U*g_theta(Lambda_hat)*U^T*X
@@ -249,7 +266,7 @@ def torchGraphConvolution(X, L, receptive_field_k):
 	n_nodes, feature_dimensions = X.shape
 
 	#2 for normalized laplacian
-	lambda_max = 2
+	lambda_max = 2.
 	L_tilde = torchScaledLaplacian(L, lambda_max)
 
 	convolved_xk = torch.empty((receptive_field_k, n_nodes, feature_dimensions))
@@ -258,7 +275,7 @@ def torchGraphConvolution(X, L, receptive_field_k):
 	convolved_xk[1, :, :] = torch.mm(L, X)
 
 	for k in range(2, receptive_field_k):
-		convolved_xk[k, :, :] = torch.mul(torch.mm(L, convolved_xk[k-1, :, :]), 2) - convolved_xk[k-2, :, :]
+		convolved_xk[k, :, :] = torch.mul(torch.mm(L, convolved_xk[k-1, :, :]), 2.) - convolved_xk[k-2, :, :]
 
 	return convolved_xk
 

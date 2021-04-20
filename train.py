@@ -27,7 +27,7 @@ parser.add_argument('--epochs', default=64, type=int, metavar='N',
 parser.add_argument('--eval-epochs', default=5, type=int, metavar='N',
 					help='evaluate model on validation set between every eval_epochs (integer) iterations')
 
-parser.add_argument('--batch-size', default=2, type=int, metavar='N',
+parser.add_argument('--batch-size', default=1, type=int, metavar='N',
 					help='train batchsize')
 
 parser.add_argument('--learning-rate', default=0.1, type=float,
@@ -37,7 +37,7 @@ parser.add_argument('--learning-rate', default=0.1, type=float,
 parser.add_argument('--gconv-filter-sizes', default=[1, 128, 256], type=list,
 					help='list of output channels for graph convolution layers')
 
-parser.add_argument('--receptive-field-k', default=2, type=int, metavar='N',
+parser.add_argument('--receptive-field-k', default=3, type=int, metavar='N',
 					help='order k of chebyshev polynomial to approximate Laplacian decomp akin to receptive field')
 
 parser.add_argument('--pooling_sizes', default=[4, 2], type=list,
@@ -97,8 +97,8 @@ best_avg_epoch_acc = 0.0
 
 def main():
 
-	if not os.path.exists(args.checkpoint_directory):
-		os.makedirs(args.checkpoint_directory)
+	if not os.path.exists(os.path.join('results', args.checkpoint_directory)):
+		os.makedirs(os.path.join('results', args.checkpoint_directory))
 
 	#load dataset
 	###-------------------------------------------------------------------------
@@ -162,16 +162,16 @@ def main():
 
 	print('==> creating GILNET model')
 
-	fully_connected_sizes = [16, num_classes]
+	fully_connected_sizes = [512, num_classes]
 
-	model = gilnet.GILNet(fully_connected_sizes, sparse_W, **params)
+	model = gilnet.GILNet(num_channels, fully_connected_sizes, **params)
 	model.to(device)
 
 	criterion = nn.CrossEntropyLoss()
 
-	#optimizer = optim.Adam(model.parameters(), lr=args.lr)
+	optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 	#optimizer = optim.SGD(model.parameters(), lr=args.learning_rate)
-	optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.decay_rate)
+	#optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=args.momentum, weight_decay=args.decay_rate)
 
 	for epoch in range(args.epochs):
 
@@ -212,15 +212,15 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
 	for batch_idx, (images, masks) in enumerate(train_loader):
 
-		images, masks = images.to(device), masks.to(device)
-
+		images = torch.squeeze(images)
+		masks = torch.squeeze(masks)
 
 		###
 		#DONTCOMMIT perform graph fusion + coarsening here, possibly torch only
 		###-------------------------------------------------------------------------
 
-		mode1 = image[:7, :, :]
-		mode2 = image[7:, :, :]
+		mode1 = images[:7, :, :]
+		mode2 = images[7:, :, :]
 
 		#each mode builds one graph of node distances 
 		W1 = graph.weightedGraph(mode1)
@@ -228,38 +228,25 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
 		W = graph.fuseMatrix(W1, W2)
 
-		W = W[:100, :100]
+		#W = W[:100, :100]
 
-		#use this and comment out below to use np L
-		#sparse_W = False
-		#W_sub = W[0:100, 0:100]
-		
-
-		#use this and comment out above to use sparse L
-		#dist, idx = graph.graphKNN(W, 1000)
-		dist, idx = graph.graphKNN(W, 10)
+		dist, idx = graph.graphKNN(W, 100)
 		A = graph.adjacency(dist, idx)
-		sparse_W = False
-
-		#largest should be 4104, 8 added
 
 		graphs, perm = coarsening.coarsen(A, levels=3, self_connections=False)
 
 
 		#collapse into (n_features, height*width)
-		X_train = np.reshape(image, (image.shape[0], -1))
+		X_train = np.reshape(images, (images.shape[0], -1))
 
-		X_train = X_train[:, :100]
+		#X_train = X_train[:, :100]
 
 		X_train = coarsening.perm_data(X_train, perm)
 
-		X_train = torch.from_numpy(X_train.T).float()
+		X_train = torch.from_numpy(X_train.T).float().to(device)
 
-		if sparse_W:
-			L = [graph.normalizedLaplacian(A, out='sparse') for A in graphs]
 
-		else:
-			L = [graph.normalizedLaplacian(A, out='dense') for A in graphs]
+		L = [graph.torchNormalizedLaplacian(A).to(device) for A in graphs]
 
 
 		###-------------------------------------------------------------------------
@@ -282,7 +269,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 		#epoch_loss += loss.detach().item()#*images.shape[0]
 
 
-		if batch_idx %50 == 0:
+		if batch_idx %5 == 0:
 			avg_batch_acc = pixelAccuracy(logits.detach(), masks.detach())
 			print('Epoch: [{}/{}] Batch: [{}/{}] Loss: [{:.4e}] Acc: [{:.3f}]'.format(epoch, args.epochs, batch_idx, num_batches, batch_loss, avg_batch_acc))
 
@@ -301,7 +288,41 @@ def validate(val_loader, model, criterion, epoch, args):
 
 		for batch_idx, (images, masks) in enumerate(val_loader):
 
-			images, masks = images.to(device), masks.to(device)
+			images = torch.squeeze(images)
+			masks = torch.squeeze(masks)
+
+			###
+			#DONTCOMMIT perform graph fusion + coarsening here, possibly torch only
+			###-------------------------------------------------------------------------
+
+			mode1 = images[:7, :, :]
+			mode2 = images[7:, :, :]
+
+			#each mode builds one graph of node distances 
+			W1 = graph.weightedGraph(mode1)
+			W2 = graph.weightedGraph(mode2)
+
+			W = graph.fuseMatrix(W1, W2)
+
+			#W = W[:100, :100]
+
+			dist, idx = graph.graphKNN(W, 100)
+			A = graph.adjacency(dist, idx)
+
+			graphs, perm = coarsening.coarsen(A, levels=3, self_connections=False)
+
+
+			#collapse into (n_features, height*width)
+			X_train = np.reshape(images, (images.shape[0], -1))
+
+			#X_train = X_train[:, :100]
+
+			X_train = coarsening.perm_data(X_train, perm)
+
+			X_train = torch.from_numpy(X_train.T).float().to(device)
+
+
+			L = [graph.torchNormalizedLaplacian(A).to(device) for A in graphs]
 
 			logits = model(images)
 

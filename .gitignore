@@ -2,7 +2,8 @@
 architectures/__pycache__
 dataset/__pycache__
 functions/__pycache__
-__pychache__
+__pychache__/
+results/
 
 *.pyc
 *.pth
